@@ -29,8 +29,8 @@ try {
 
 const env = {
   NOTION_TOKEN: process.env.NOTION_TOKEN,
-  NOTION_PROFILE_PAGE_ID: process.env.NOTION_PROFILE_PAGE_ID,
-  NOTION_INTAKE_DATABASE_ID: process.env.NOTION_INTAKE_DATABASE_ID,
+  PROFILE_PAGE_ID: process.env.PROFILE_PAGE_ID,
+  INTAKE_DATABASE_ID: process.env.INTAKE_DATABASE_ID,
 };
 
 const pageId = process.argv[2];

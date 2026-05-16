@@ -1,7 +1,13 @@
 const NOTION_API = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
 
-function headers(token) {
+export type Env = {
+  NOTION_TOKEN: string;
+  PROFILE_PAGE_ID: string;
+  INTAKE_DATABASE_ID: string;
+};
+
+function headers(token: string) {
   return {
     "Authorization": `Bearer ${token}`,
     "Content-Type": "application/json",
@@ -9,33 +15,33 @@ function headers(token) {
   };
 }
 
-export async function fetchProfileText(env) {
+export async function fetchProfileText(env: Env): Promise<string> {
   const res = await fetch(`${NOTION_API}/blocks/${env.PROFILE_PAGE_ID}/children`, {
     headers: headers(env.NOTION_TOKEN),
   });
-  const data = await res.json();
+  const data: any = await res.json();
   if (!res.ok) {
     console.warn(`  [notion] Profile fetch failed (${res.status}): ${data.message ?? JSON.stringify(data)}`);
     return "";
   }
   if (!data.results) return "";
   return data.results
-    .filter(b => ["paragraph", "bulleted_list_item", "numbered_list_item"].includes(b.type))
-    .map(b => b[b.type].rich_text.map(t => t.plain_text).join(""))
+    .filter((b: any) => ["paragraph", "bulleted_list_item", "numbered_list_item"].includes(b.type))
+    .map((b: any) => b[b.type].rich_text.map((t: any) => t.plain_text).join(""))
     .filter(Boolean)
     .join("\n");
 }
 
-export async function fetchIntakeRow(pageId, env) {
+export async function fetchIntakeRow(pageId: string, env: Env) {
   const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
     headers: headers(env.NOTION_TOKEN),
   });
-  const page = await res.json();
+  const page: any = await res.json();
   const props = page.properties;
 
-  const getText = (prop) => prop?.rich_text?.map(t => t.plain_text).join("") ?? "";
-  const getTitle = (prop) => prop?.title?.map(t => t.plain_text).join("") ?? "";
-  const getSelect = (prop) => prop?.select?.name ?? "";
+  const getText = (prop: any) => prop?.rich_text?.map((t: any) => t.plain_text).join("") ?? "";
+  const getTitle = (prop: any) => prop?.title?.map((t: any) => t.plain_text).join("") ?? "";
+  const getSelect = (prop: any) => prop?.select?.name ?? "";
 
   return {
     title: getTitle(props.Title),
@@ -46,7 +52,12 @@ export async function fetchIntakeRow(pageId, env) {
   };
 }
 
-export async function createRecommendationPage(title, blocks, env, intakePageId) {
+export async function createRecommendationPage(
+  title: string,
+  blocks: any[],
+  env: Env,
+  intakePageId: string
+) {
   const res = await fetch(`${NOTION_API}/pages`, {
     method: "POST",
     headers: headers(env.NOTION_TOKEN),
@@ -58,14 +69,14 @@ export async function createRecommendationPage(title, blocks, env, intakePageId)
       children: blocks,
     }),
   });
-  const page = await res.json();
+  const page: any = await res.json();
   if (!res.ok) {
     throw new Error(`Notion create page failed (${res.status}): ${page.message ?? JSON.stringify(page)}`);
   }
   return { id: page.id, url: page.url };
 }
 
-export async function updateIntakeRow(pageId, pageUrl, env) {
+export async function updateIntakeRow(pageId: string, pageUrl: string, env: Env) {
   const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
     method: "PATCH",
     headers: headers(env.NOTION_TOKEN),
@@ -77,13 +88,13 @@ export async function updateIntakeRow(pageId, pageUrl, env) {
     }),
   });
   if (!res.ok) {
-    const err = await res.json();
+    const err: any = await res.json();
     throw new Error(`Notion update row failed (${res.status}): ${err.message ?? JSON.stringify(err)}`);
   }
 }
 
-export function recommendationToBlocks(text) {
-  const blocks = [];
+export function recommendationToBlocks(text: string): any[] {
+  const blocks: any[] = [];
   const lines = text.split("\n");
   let i = 0;
 
@@ -93,18 +104,16 @@ export function recommendationToBlocks(text) {
     if (!trimmed) { i++; continue; }
 
     if (trimmed.startsWith("|")) {
-      // Collect all consecutive table lines
-      const tableLines = [];
+      const tableLines: string[] = [];
       while (i < lines.length && lines[i].trim().startsWith("|")) {
         tableLines.push(lines[i].trim());
         i++;
       }
-      // Filter out separator rows like |---|---|
       const dataRows = tableLines.filter(l => !/^[\|\s\-:]+$/.test(l));
       if (dataRows.length === 0) continue;
 
       const parsedRows = dataRows.map(row =>
-        row.split("|").map(c => c.trim()).filter(Boolean)
+        row.split("|").map((c: string) => c.trim()).filter(Boolean)
       );
       const tableWidth = parsedRows[0].length;
 
@@ -117,7 +126,7 @@ export function recommendationToBlocks(text) {
           children: parsedRows.map(cells => ({
             type: "table_row",
             table_row: {
-              cells: cells.map(cell => [{ type: "text", text: { content: cell } }]),
+              cells: cells.map((cell: string) => [{ type: "text", text: { content: cell } }]),
             },
           })),
         },
