@@ -1,0 +1,4 @@
+{
+  "name": "decisionai",
+  "main": "worker.js"
+}
