@@ -8,11 +8,33 @@ async function safeFetch(url) {
   }
 }
 
-async function fetchPurchaseData() {
-  const data = await safeFetch("https://vpic.nhtsa.dot.gov/api/vehicles/getallmakes?format=json");
-  if (!data?.Results) return "No external data available";
-  const makes = data.Results.slice(0, 20).map(m => m.Make_Name).join(", ");
-  return `Top vehicle manufacturers available in the US market: ${makes}`;
+async function fetchPurchaseData(options) {
+  const isCarDecision = /car|vehicle|transport|truck|suv|auto|transit/i.test(options);
+
+  if (isCarDecision) {
+    // Fetch reliability data for top makes from NHTSA safety ratings
+    const topMakes = ["Toyota", "Honda", "Hyundai"];
+    const complaints = [];
+    for (const make of topMakes) {
+      const data = await safeFetch(`https://api.nhtsa.gov/complaints/complaintsByVehicle?make=${make}&modelYear=2021`);
+      if (data?.results) {
+        const total = data.results.reduce((sum, r) => sum + (r.numberOfComplaints ?? 0), 0);
+        if (total > 0) complaints.push(`${make} 2021 models: ${total} NHTSA complaints`);
+      }
+    }
+    const safetyLine = complaints.length ? complaints.join("; ") : "";
+    return [
+      "US car market context (2024–2025):",
+      "• New car avg price: ~$48,000 | Certified used: ~$28,000 | Private used: $8,000–$18,000",
+      "• Annual ownership cost (insurance + maintenance + fuel + parking in SF): ~$10,000–$13,000/year",
+      "• Public transit (SF BART + Muni): ~$100/month = ~$1,200/year",
+      "• Reliable used cars $10k–$15k range: Toyota Corolla, Honda Civic, Hyundai Elantra (2018–2021)",
+      safetyLine,
+    ].filter(Boolean).join("\n");
+  }
+
+  // Generic purchase fallback
+  return "Compare total cost of ownership across all options, not just purchase price. Factor in maintenance, insurance, and resale value.";
 }
 
 async function fetchTechData(options) {
@@ -66,7 +88,7 @@ async function fetchFoodData(options) {
 export async function fetchExternalData(decisionType, options) {
   try {
     switch (decisionType?.toLowerCase()) {
-      case "purchase": return await fetchPurchaseData();
+      case "purchase": return await fetchPurchaseData(options);
       case "tech":     return await fetchTechData(options);
       case "travel":   return await fetchTravelData(options);
       case "career":   return await fetchCareerData(options);

@@ -46,12 +46,12 @@ export async function fetchIntakeRow(pageId, env) {
   };
 }
 
-export async function createRecommendationPage(title, blocks, env) {
+export async function createRecommendationPage(title, blocks, env, intakePageId) {
   const res = await fetch(`${NOTION_API}/pages`, {
     method: "POST",
     headers: headers(env.NOTION_TOKEN),
     body: JSON.stringify({
-      parent: { database_id: env.NOTION_INTAKE_DATABASE_ID },
+      parent: { page_id: intakePageId },
       properties: {
         title: { title: [{ text: { content: `✅ ${title} — Recommendation` } }] },
       },
@@ -84,21 +84,58 @@ export async function updateIntakeRow(pageId, pageUrl, env) {
 
 export function recommendationToBlocks(text) {
   const blocks = [];
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  const lines = text.split("\n");
+  let i = 0;
 
-    if (trimmed.startsWith("## ")) {
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+
+    if (!trimmed) { i++; continue; }
+
+    if (trimmed.startsWith("|")) {
+      // Collect all consecutive table lines
+      const tableLines = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        tableLines.push(lines[i].trim());
+        i++;
+      }
+      // Filter out separator rows like |---|---|
+      const dataRows = tableLines.filter(l => !/^[\|\s\-:]+$/.test(l));
+      if (dataRows.length === 0) continue;
+
+      const parsedRows = dataRows.map(row =>
+        row.split("|").map(c => c.trim()).filter(Boolean)
+      );
+      const tableWidth = parsedRows[0].length;
+
+      blocks.push({
+        type: "table",
+        table: {
+          table_width: tableWidth,
+          has_column_header: true,
+          has_row_header: false,
+          children: parsedRows.map(cells => ({
+            type: "table_row",
+            table_row: {
+              cells: cells.map(cell => [{ type: "text", text: { content: cell } }]),
+            },
+          })),
+        },
+      });
+    } else if (trimmed.startsWith("## ")) {
       blocks.push({
         type: "heading_2",
         heading_2: { rich_text: [{ type: "text", text: { content: trimmed.slice(3) } }] },
       });
+      i++;
     } else {
       blocks.push({
         type: "paragraph",
         paragraph: { rich_text: [{ type: "text", text: { content: trimmed } }] },
       });
+      i++;
     }
   }
+
   return blocks;
 }

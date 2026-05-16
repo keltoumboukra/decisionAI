@@ -41,12 +41,12 @@ export default {
       console.log(`[DecideAI] External data fetched for type: ${row.decisionType}`);
 
       const recommendation = await callNotionAI(
-        { profile, title: row.title, options: row.options, criteria: row.criteria, externalData },
+        { profile, title: row.title, options: row.options, criteria: row.criteria, externalData, decisionType: row.decisionType },
         env
       );
 
       const blocks = recommendationToBlocks(recommendation);
-      const { url: newPageUrl } = await createRecommendationPage(row.title, blocks, env);
+      const { url: newPageUrl } = await createRecommendationPage(row.title, blocks, env, pageId);
       console.log(`[DecideAI] Recommendation page created: ${newPageUrl}`);
 
       await updateIntakeRow(pageId, newPageUrl, env);

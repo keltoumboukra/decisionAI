@@ -60,7 +60,7 @@ try {
 
   console.log("\n3/5  Calling Notion AI (fallback expected until Business plan activates)...");
   const recommendation = await callNotionAI(
-    { profile, title: row.title, options: row.options, criteria: row.criteria, externalData },
+    { profile, title: row.title, options: row.options, criteria: row.criteria, externalData, decisionType: row.decisionType },
     env
   );
   console.log("\n     --- RECOMMENDATION PREVIEW (first 600 chars) ---");
@@ -69,7 +69,7 @@ try {
 
   console.log("\n4/5  Writing recommendation page to Notion...");
   const blocks = recommendationToBlocks(recommendation);
-  const { url } = await createRecommendationPage(row.title, blocks, env);
+  const { url } = await createRecommendationPage(row.title, blocks, env, pageId);
   console.log(`     Created: ${url}`);
 
   console.log("\n5/5  Updating intake row (Status → Done, Output Page linked)...");
