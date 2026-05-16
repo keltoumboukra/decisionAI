@@ -36,10 +36,32 @@ worker.webhook("onDecisionIntake", {
       console.log(`[DecideAI] Processing intake row: ${pageId}`);
 
       try {
-        const [row, profile] = await Promise.all([
-          fetchIntakeRow(pageId, env),
-          fetchProfileText(env),
-        ]);
+        // Parse row data from webhook payload directly (automation already sends full page)
+        // Fall back to API fetch for direct POST / non-automation triggers
+        let row: { title: string; options: string; criteria: string; decisionType: string; urgency: string };
+        if (body?.data?.properties) {
+          const props = body.data.properties;
+          const getText = (p: any) => p?.rich_text?.map((t: any) => t.plain_text).join("") ?? "";
+          const getTitle = (p: any) => p?.title?.map((t: any) => t.plain_text).join("") ?? "";
+          const getSelect = (p: any) => p?.select?.name ?? "";
+          row = {
+            title: getTitle(props.Title),
+            options: getText(props.Options),
+            criteria: getText(props["My Criteria"]),
+            decisionType: getSelect(props["Decision Type"]),
+            urgency: getSelect(props.Urgency),
+          };
+        } else {
+          row = await fetchIntakeRow(pageId, env);
+        }
+
+        // Skip rows that aren't ready yet (automation fires on creation, before user fills fields)
+        if (!row.title || !row.decisionType) {
+          console.warn(`[DecideAI] Skipping incomplete row ${pageId} — title="${row.title}" type="${row.decisionType}". Set Status → Pending to trigger when ready.`);
+          continue;
+        }
+
+        const profile = await fetchProfileText(env);
 
         console.log(`[DecideAI] Decision: "${row.title}" | Type: ${row.decisionType}`);
 

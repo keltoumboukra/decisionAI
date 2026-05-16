@@ -37,7 +37,13 @@ export async function fetchIntakeRow(pageId: string, env: Env) {
     headers: headers(env.NOTION_TOKEN),
   });
   const page: any = await res.json();
+  if (!res.ok) {
+    throw new Error(`fetchIntakeRow failed (${res.status}): ${page.message ?? JSON.stringify(page)}`);
+  }
   const props = page.properties;
+  if (!props) {
+    throw new Error(`fetchIntakeRow: no properties in response for page ${pageId}: ${JSON.stringify(page)}`);
+  }
 
   const getText = (prop: any) => prop?.rich_text?.map((t: any) => t.plain_text).join("") ?? "";
   const getTitle = (prop: any) => prop?.title?.map((t: any) => t.plain_text).join("") ?? "";
