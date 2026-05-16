@@ -18,8 +18,15 @@ worker.webhook("onDecisionIntake", {
 
     for (const event of events) {
       const body = event.body as any;
+      // Handle multiple Notion webhook payload shapes
       const pageId: string | undefined =
-        body?.entity?.id ?? body?.data?.page_id ?? body?.page_id;
+        body?.data?.id ??           // Notion automation: { data: { id: "..." } }
+        body?.entity?.id ??         // Notion webhook API
+        body?.data?.page_id ??      // generic
+        body?.page_id ??            // direct POST
+        body?.id;                   // fallback
+
+      console.log("[DecideAI] Webhook body:", JSON.stringify(body));
 
       if (!pageId) {
         console.warn("[DecideAI] No page ID found in webhook payload:", JSON.stringify(body));
