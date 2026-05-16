@@ -14,6 +14,10 @@ export async function fetchProfileText(env) {
     headers: headers(env.NOTION_TOKEN),
   });
   const data = await res.json();
+  if (!res.ok) {
+    console.warn(`  [notion] Profile fetch failed (${res.status}): ${data.message ?? JSON.stringify(data)}`);
+    return "";
+  }
   if (!data.results) return "";
   return data.results
     .filter(b => ["paragraph", "bulleted_list_item", "numbered_list_item"].includes(b.type))
@@ -55,11 +59,14 @@ export async function createRecommendationPage(title, blocks, env) {
     }),
   });
   const page = await res.json();
+  if (!res.ok) {
+    throw new Error(`Notion create page failed (${res.status}): ${page.message ?? JSON.stringify(page)}`);
+  }
   return { id: page.id, url: page.url };
 }
 
 export async function updateIntakeRow(pageId, pageUrl, env) {
-  await fetch(`${NOTION_API}/pages/${pageId}`, {
+  const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
     method: "PATCH",
     headers: headers(env.NOTION_TOKEN),
     body: JSON.stringify({
@@ -69,6 +76,10 @@ export async function updateIntakeRow(pageId, pageUrl, env) {
       },
     }),
   });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(`Notion update row failed (${res.status}): ${err.message ?? JSON.stringify(err)}`);
+  }
 }
 
 export function recommendationToBlocks(text) {
