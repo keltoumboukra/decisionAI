@@ -22,9 +22,9 @@ curl -fsSL https://ntn.dev | bash
 ### 2. Set environment variables
 
 ```bash
-ntn env set NOTION_TOKEN=ntn_N80055443641ZakjXbKiF5FWesiKM3odoiTGg8KCYzpcxJ
-ntn env set NOTION_PROFILE_PAGE_ID=3622b9f2d52a8099ad72d84902ff2f0f
-ntn env set NOTION_INTAKE_DATABASE_ID=a9aa4ee8eff9403eb89e38e68ee868d6
+ntn env set NOTION_TOKEN=<your_notion_token>
+ntn env set NOTION_PROFILE_PAGE_ID=<your_profile_page_id>
+ntn env set NOTION_INTAKE_DATABASE_ID=<your_intake_database_id>
 ```
 
 ### 3. Deploy
