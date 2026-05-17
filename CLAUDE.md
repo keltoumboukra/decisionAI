@@ -2,13 +2,31 @@
 
 ## What this project is
 An autonomous decision agent for the Notion Developer Platform Hackathon (May 2026).
-When a user sets a row's Status to "Pending" in the Decision Intake database, a Notion Worker webhook fires, fetches external data, calls Notion AI (with a smart fallback), and writes a structured recommendation sub-page back into that row.
+When a user sets a row's Status to "Pending" in the Decision Intake database, a **Notion Custom Agent** triggers, calls two Worker tools to fetch context and write the result, and produces a structured recommendation sub-page — powered by Notion AI (using Notion credits).
+
+## Architecture
+
+```
+Notion Database (Status → Pending)
+        ↓  [database property trigger on Custom Agent]
+Notion Custom Agent  ← AI reasoning here (Notion credits consumed)
+        ↓
+  call fetchDecisionContext(pageId)   ← Worker tool
+  returns: title, options, criteria, decisionType, urgency, profile, externalData
+        ↓
+  Agent reasons with AI, produces structured recommendation markdown
+        ↓
+  call writeRecommendation(pageId, title, recommendation)  ← Worker tool
+  creates sub-page, sets Status=Done, links Output Page
+```
+
+The Worker exposes two tools. The Custom Agent is the orchestrator and AI layer.
 
 ## Stack
 - **Notion Workers** (Beta) — serverless TypeScript runtime, deployed via `ntn` CLI
-- **`@notionhq/workers` SDK** — `Worker` class, `worker.webhook()`
+- **`@notionhq/workers` SDK** — `Worker` class, `worker.tool()`
+- **Notion Custom Agent** — AI reasoning layer, triggers on Status → Pending, consumes Notion credits
 - **Notion REST API** v1 (2022-06-28)
-- **Notion AI API** (`/v1/ai/generate`) — requires Business plan credits; fallback template used if unavailable
 - TypeScript: `module: nodenext`, `rootDir: ./src`, `outDir: ./dist`
 
 ## Key IDs
@@ -16,7 +34,6 @@ When a user sets a row's Status to "Pending" in the Decision Intake database, a 
 - Workspace ID: `a9aa3075-26cc-4b1b-8f13-b0a60c653508`
 - Intake database ID: `eb7d63de47b54c3ca56fe44d61ec9e12`
 - Profile page ID: `3622b9f2d52a8099ad72d84902ff2f0f`
-- Webhook URL: `https://www.notion.so/webhooks/worker/a9aa3075-26cc-4b1b-8f13-b0a60c653508/019e32f4-8c16-7f69-b92b-3cc2d5c2393f/8mN5k-GFa3nJrt8U/onDecisionIntake`
 
 ## Env vars
 The `NOTION_` prefix is reserved by the Workers runtime — cannot be set manually.
@@ -25,7 +42,7 @@ The `NOTION_` prefix is reserved by the Workers runtime — cannot be set manual
 - `INTAKE_DATABASE_ID` — ID of the Decision Intake database
 - Local `.env` file has `NOTION_TOKEN=...` for `test.js` only (not committed)
 
-In `src/index.ts`, `process.env.API_TOKEN` is mapped to `env.NOTION_TOKEN` internally.
+In `src/index.ts`, `process.env.API_TOKEN` is mapped to `env.NOTION_TOKEN` internally via `makeEnv()`.
 
 ## Database properties (Decision Intake)
 - `Title` (title)
@@ -33,60 +50,96 @@ In `src/index.ts`, `process.env.API_TOKEN` is mapped to `env.NOTION_TOKEN` inter
 - `My Criteria` (rich_text)
 - `Decision Type` (select: Purchase / Tech / Travel / Career / Food)
 - `Urgency` (select: This month / No rush / etc.)
-- `Status` (select: Pending → Done, set by worker when complete)
-- `Output Page` (url, set by worker to the recommendation sub-page)
+- `Status` (select: Pending → Done / Error)
+- `Output Page` (url, set by writeRecommendation tool)
 
-## Automation trigger
-Notion automation: "Status is set to Pending" → "Send webhook" to the worker URL.
-All existing properties checked in Content section.
-This replaced the earlier "Page added" trigger which fired before fields were filled in.
+## Custom Agent setup (do this once in Notion UI)
+
+**Trigger:** Property updated → Decision Intake database → Status = Pending
+
+**Tools:** Attach both Worker tools: `fetchDecisionContext` and `writeRecommendation`
+
+**System prompt:**
+```
+You are DecideAI, a structured decision advisor inside Notion.
+
+When triggered:
+1. Call fetchDecisionContext with the page ID from the trigger
+2. Reason carefully over the decision using the user's profile, their stated criteria, the options, and the external data provided
+3. Produce a structured recommendation in this exact format:
+
+## 🎯 Recommendation
+[Single decisive sentence — pick one option]
+
+## 📊 Options Compared
+| Option | Pros | Cons | Fit Score /10 |
+|--------|------|------|----------------|
+[one row per option]
+
+## 🔍 Key Insight
+[One paragraph referencing the profile and external data]
+
+## ⚠️ Watch out for
+[One or two concrete risks]
+
+## ✅ Next step
+[One action to take in the next 48 hours]
+
+4. Call writeRecommendation with the pageId, the decision title, and your full recommendation text.
+
+Be direct and decisive. Never hedge excessively. Reference the user profile and external data in your reasoning.
+```
 
 ## File layout
 ```
 src/
-  index.ts      — worker entry point, webhook handler
+  index.ts      — worker entry point: fetchDecisionContext + writeRecommendation tools
   notion.ts     — Notion API helpers (fetchIntakeRow, createRecommendationPage, etc.)
-  notionai.ts   — callNotionAI + buildFallbackRecommendation (decision-type-aware)
   external.ts   — fetchExternalData (routes by decision type)
 notion.js       — plain JS copy of notion.ts (used by test.js)
-notionai.js     — plain JS copy of notionai.ts (used by test.js)
 external.js     — plain JS copy of external.ts (used by test.js)
-test.js         — local pipeline runner: node test.js <page-id>
+test.js         — local tool test: simulates both tool calls against real Notion
 worker.js       — legacy Cloudflare-style handler (not used for deployment)
 workers.json    — auto-generated by ntn deploy (worker + workspace IDs)
 ```
 
 ## Deploy & run
 ```bash
-node_modules/.bin/tsc          # build
-~/.local/bin/ntn workers deploy  # deploy to Notion Workers
-node test.js <page-id>         # run full pipeline locally against real Notion
+npm run build                    # compile src → dist
+ntn workers deploy               # deploy to Notion Workers
+node test.js <page-id>           # simulate tool calls locally against real Notion
 ```
 
 ## Check worker runs & logs
 ```bash
-~/.local/bin/ntn workers runs list 019e32f4-8c16-7f69-b92b-3cc2d5c2393f
-~/.local/bin/ntn workers runs logs <run-id>
+ntn workers runs list 019e32f4-8c16-7f69-b92b-3cc2d5c2393f
+ntn workers runs logs <run-id>
 ```
 
 ## ntn CLI location
 `~/.local/bin/ntn` (added to PATH via shell profile)
 
+## External data sources (per decision type)
+| Type | API |
+|------|-----|
+| Purchase | NHTSA complaints API |
+| Tech | Wikipedia search API |
+| Travel | REST Countries API |
+| Career | Remotive remote jobs API |
+| Food | TheMealDB API |
+
 ## What's working
-- End-to-end pipeline via `test.js` ✅
-- Worker deployed and receiving webhooks ✅
-- Automation trigger (Status → Pending) ✅
-- Webhook payload parsed from `body.data.properties` directly (no extra API call) ✅
-- Recommendation created as sub-page inside intake row (not as a database row) ✅
-- Notion table blocks rendered properly (not raw pipe text) ✅
-- Decision-type-aware fallback recommendation ✅
-- External data per decision type (NHTSA, Wikipedia, REST Countries, Remotive, TheMealDB) ✅
+- Worker deployed with two tools: `fetchDecisionContext` and `writeRecommendation` ✅
+- Custom Agent triggers on Status → Pending (database property trigger) ✅
+- External data fetched per decision type ✅
+- Recommendation created as sub-page inside intake row ✅
+- Notion table blocks rendered properly ✅
+- Status flips to Error on pipeline failure ✅
+- Profile page text fetched and passed to Custom Agent ✅
 
 ## What's NOT done yet
-- **Notion AI verification** — last run showed `Notion AI returned 400`; endpoint or request format may need fixing
-- **Profile page** — was returning 401 before the API_TOKEN fix; needs verification
-- **Error UX** — if pipeline fails, Status stays stuck at "Pending"; should flip to "Error"
-- **README** — needs update with correct env var names and setup steps
+- **Custom Agent wiring** — needs to be created in Notion UI with both tools and the system prompt above
+- **End-to-end test with credits** — verify credits are consumed when Custom Agent runs
 
 ## Test case
 ```
@@ -96,4 +149,4 @@ My Criteria: I travel often, small apartment, budget under $500
 Decision Type: Purchase
 Urgency: No rush
 ```
-Set Status → Pending to trigger. Recommendation should appear in ~15 seconds.
+Set Status → Pending to trigger. Custom Agent should run, call both tools, and produce a recommendation sub-page.

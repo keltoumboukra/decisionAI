@@ -1,8 +1,10 @@
-// Local pipeline test — no Workers runtime needed.
+// Local tool test — simulates what the Custom Agent does when it calls the two Worker tools.
 // Usage: node test.js <intake-page-id>
 //
 // Reads env vars from a local .env file automatically.
-// The full pipeline runs: fetch row → fetch profile → external data → AI (fallback) → write page → update row.
+// Step 1: calls fetchDecisionContext (fetches row + profile + external data)
+// Step 2: prints the data bundle the Custom Agent would receive
+// Step 3: writes a sample recommendation to Notion via writeRecommendation
 
 import { readFileSync } from "fs";
 import {
@@ -12,7 +14,6 @@ import {
   updateIntakeRow,
   recommendationToBlocks,
 } from "./notion.js";
-import { callNotionAI } from "./notionai.js";
 import { fetchExternalData } from "./external.js";
 
 // Load .env file without any npm dependencies
@@ -40,42 +41,58 @@ if (!pageId) {
   process.exit(1);
 }
 
-console.log(`\n[DecideAI] Running pipeline for page: ${pageId}\n`);
+console.log(`\n[DecideAI] Simulating Custom Agent tool calls for page: ${pageId}\n`);
 
 try {
-  console.log("1/5  Fetching intake row + profile...");
+  // --- Simulate fetchDecisionContext ---
+  console.log("1/3  fetchDecisionContext: fetching row + profile + external data...");
   const [row, profile] = await Promise.all([
     fetchIntakeRow(pageId, env),
     fetchProfileText(env),
   ]);
-  console.log(`     Title:         ${row.title}`);
-  console.log(`     Options:       ${row.options}`);
-  console.log(`     Criteria:      ${row.criteria}`);
-  console.log(`     Decision type: ${row.decisionType}`);
-  console.log(`     Profile:       ${profile.length} chars loaded`);
-
-  console.log("\n2/5  Fetching external data...");
   const externalData = await fetchExternalData(row.decisionType, row.options);
-  console.log(`     ${externalData.slice(0, 120)}${externalData.length > 120 ? "..." : ""}`);
 
-  console.log("\n3/5  Calling Notion AI (fallback expected until Business plan activates)...");
-  const recommendation = await callNotionAI(
-    { profile, title: row.title, options: row.options, criteria: row.criteria, externalData, decisionType: row.decisionType },
-    env
-  );
-  console.log("\n     --- RECOMMENDATION PREVIEW (first 600 chars) ---");
-  console.log(recommendation.slice(0, 600));
-  if (recommendation.length > 600) console.log("     ...");
+  const context = { ...row, profile, externalData };
 
-  console.log("\n4/5  Writing recommendation page to Notion...");
-  const blocks = recommendationToBlocks(recommendation);
+  console.log("\n     Context bundle returned to Custom Agent:");
+  console.log(`     Title:         ${context.title}`);
+  console.log(`     Options:       ${context.options}`);
+  console.log(`     Criteria:      ${context.criteria}`);
+  console.log(`     Decision type: ${context.decisionType}`);
+  console.log(`     Urgency:       ${context.urgency}`);
+  console.log(`     Profile:       ${context.profile.length} chars`);
+  console.log(`     External data: ${context.externalData.slice(0, 120)}${context.externalData.length > 120 ? "..." : ""}`);
+
+  console.log("\n2/3  (In production: Custom Agent receives the above and produces a recommendation using Notion AI)");
+  console.log("     Using a sample recommendation for this local test...\n");
+
+  // Sample recommendation — the Custom Agent would generate this with real AI
+  const sampleRecommendation = `## 🎯 Recommendation
+Go with **${row.options.split(/[,/]/)[0].trim()}** — it best fits your stated criteria.
+
+## 📊 Options Compared
+| Option | Pros | Cons | Fit Score /10 |
+|--------|------|------|----------------|
+${row.options.split(/[,/]/).map((o, i) => `| ${o.trim()} | Strengths to evaluate | Trade-offs to consider | ${8 - i} |`).join("\n")}
+
+## 🔍 Key Insight
+Based on your profile and criteria (${row.criteria}), the first option aligns most closely with your stated priorities. The external data supports this choice.
+
+## ⚠️ Watch out for
+Verify all assumptions before committing. What seems obvious on paper may look different in practice.
+
+## ✅ Next step
+Research the top option in detail over the next 48 hours and make a go/no-go call.`;
+
+  // --- Simulate writeRecommendation ---
+  console.log("3/3  writeRecommendation: creating sub-page and updating row...");
+  const blocks = recommendationToBlocks(sampleRecommendation);
   const { url } = await createRecommendationPage(row.title, blocks, env, pageId);
+  await updateIntakeRow(pageId, url, env);
   console.log(`     Created: ${url}`);
 
-  console.log("\n5/5  Updating intake row (Status → Done, Output Page linked)...");
-  await updateIntakeRow(pageId, url, env);
-
-  console.log("\n[DecideAI] Done. Open your Notion database to see the result.\n");
+  console.log("\n[DecideAI] Done. Open your Notion database to see the result.");
+  console.log("           In production, the recommendation is written by the Custom Agent using Notion AI.\n");
 } catch (err) {
   console.error("\n[DecideAI] Error:", err.message);
   process.exit(1);

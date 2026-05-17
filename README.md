@@ -1,10 +1,10 @@
 # DecideAI
 
-An autonomous decision agent built on Notion Workers and Notion AI.
+An autonomous decision agent built on the Notion Developer Platform.
 
-Submit any decision to the Notion intake form — buying a car, choosing a city, picking a phone — and the agent automatically fetches external data, reads your personal profile, and writes a structured recommendation directly into Notion.
+Submit any decision to the Notion intake form — buying a car, choosing a city, picking a phone — and a Notion Custom Agent automatically fetches external data, reads your personal profile, and writes a structured recommendation directly into Notion using Notion AI.
 
-No chatbot. No back-and-forth. No extra API costs beyond your Notion Business plan. Just a clear answer.
+No chatbot. No back-and-forth. No extra API costs beyond your Notion Business plan credits. Just a clear answer.
 
 Built at the Notion Developer Platform Hackathon, May 2026.
 
@@ -14,10 +14,12 @@ Built at the Notion Developer Platform Hackathon, May 2026.
 
 1. Fill in a row in the **Decision Intake** database (title, options, criteria, decision type)
 2. Set **Status → Pending** to trigger the agent
-3. The Worker reads your row and your **My Profile** page
-4. It fetches relevant external data based on decision type
-5. It calls **Notion AI** to reason over everything
-6. A structured recommendation page appears inside the row within ~15 seconds
+3. A **Notion Custom Agent** fires automatically (database property trigger)
+4. The agent calls the `fetchDecisionContext` Worker tool — which fetches your intake row, your **My Profile** page, and external data for the decision type
+5. The Custom Agent reasons over everything with **Notion AI** (Notion credits are consumed here)
+6. The agent calls the `writeRecommendation` Worker tool — which creates a structured recommendation page inside the row and sets Status → Done
+
+The two **Notion Workers** are the infrastructure layer. The Custom Agent is the AI orchestrator.
 
 ---
 
@@ -45,7 +47,7 @@ ntn workers env set PROFILE_PAGE_ID=<your_profile_page_id>
 ntn workers env set INTAKE_DATABASE_ID=<your_intake_database_id>
 ```
 
-### 4. Deploy
+### 4. Deploy the Worker
 
 ```bash
 npm install
@@ -53,13 +55,44 @@ npm run build
 ntn workers deploy
 ```
 
-### 5. Wire up the automation
+### 5. Create the Custom Agent in Notion
 
-In your Decision Intake database:
-- Click **Automate** → create automation
-- Trigger: **"Status is set to Pending"**
-- Action: **Send webhook** → paste the worker webhook URL from `ntn workers webhooks list`
-- Content: check **"Select all existing properties"**
+In Notion, create a new **Custom Agent** and configure it:
+
+**Trigger:** Property updated → Decision Intake database → Status = Pending
+
+**Tools:** Attach both Worker tools — `fetchDecisionContext` and `writeRecommendation` — from your deployed Worker.
+
+**System prompt:**
+```
+You are DecideAI, a structured decision advisor inside Notion.
+
+When triggered:
+1. Call fetchDecisionContext with the page ID from the trigger
+2. Reason carefully over the decision using the user's profile, their stated criteria, the options, and the external data provided
+3. Produce a structured recommendation in this exact format:
+
+## 🎯 Recommendation
+[Single decisive sentence — pick one option]
+
+## 📊 Options Compared
+| Option | Pros | Cons | Fit Score /10 |
+|--------|------|------|----------------|
+[one row per option]
+
+## 🔍 Key Insight
+[One paragraph referencing the profile and external data]
+
+## ⚠️ Watch out for
+[One or two concrete risks]
+
+## ✅ Next step
+[One action to take in the next 48 hours]
+
+4. Call writeRecommendation with the pageId, the decision title, and your full recommendation text.
+
+Be direct and decisive. Never hedge excessively. Reference the user profile and external data in your reasoning.
+```
 
 ---
 
@@ -67,7 +100,7 @@ In your Decision Intake database:
 
 | Type | External API |
 |------|-------------|
-| Purchase | NHTSA vehicle safety / cost-of-ownership context |
+| Purchase | NHTSA vehicle safety / complaints data |
 | Tech | Wikipedia search API |
 | Travel | REST Countries API |
 | Career | Remotive remote jobs API |
@@ -84,12 +117,12 @@ PROFILE_PAGE_ID=<your_profile_page_id>
 INTAKE_DATABASE_ID=<your_intake_database_id>
 ```
 
-Run the full pipeline against a real Notion row:
+Run the tool simulation against a real Notion row:
 ```bash
 node test.js <intake-page-id>
 ```
 
-The page ID is in the Notion URL when you open the row.
+This simulates what the Custom Agent does: calls `fetchDecisionContext`, prints the data bundle, then writes a sample recommendation via `writeRecommendation`. The page ID is in the Notion URL when you open the row.
 
 ---
 
@@ -103,7 +136,7 @@ Decision Type: Purchase
 Urgency:       No rush
 ```
 
-Set **Status → Pending**. A recommendation sub-page appears inside that row within 15 seconds.
+Set **Status → Pending**. The Custom Agent fires, reasons with Notion AI, and a recommendation sub-page appears inside that row within ~30 seconds.
 
 ---
 
@@ -111,7 +144,8 @@ Set **Status → Pending**. A recommendation sub-page appears inside that row wi
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Status stays **Pending** | Worker not deployed or automation not configured | Run `ntn workers deploy` and verify the automation trigger |
-| Status flips to **Error** | Pipeline failed mid-run | Check logs: `ntn workers runs list <worker-id>` → `ntn workers runs logs <run-id>` |
-| Output Page is empty | Worker ran but page creation failed | Same as above — check logs for the specific error |
+| Status stays **Pending** | Custom Agent not configured or trigger not set | Create the Custom Agent with the database property trigger |
+| Status flips to **Error** | Worker tool threw an error | Check logs: `ntn workers runs list <worker-id>` → `ntn workers runs logs <run-id>` |
+| Output Page is empty | `writeRecommendation` tool failed | Same as above — check Worker logs |
 | Profile text missing | Integration lacks access to My Profile page | Share the profile page with your integration in Notion settings |
+| No credits consumed | Custom Agent not running | Verify trigger is set to "Status = Pending" on the correct database |
