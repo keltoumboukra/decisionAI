@@ -12,6 +12,8 @@ No chatbot. No back-and-forth. No extra API costs beyond your Notion Business pl
 
 Built at the Notion Developer Platform Hackathon, May 2026.
 
+**[Watch the demo →](https://www.youtube.com/watch?v=LOax_8D7DYE)**
+
 ---
 
 ## How it works
