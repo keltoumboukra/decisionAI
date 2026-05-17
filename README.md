@@ -2,7 +2,11 @@
 
 An autonomous decision agent built on the Notion Developer Platform.
 
-Submit any decision to the Notion intake form — buying a car, choosing a city, picking a phone — and a Notion Custom Agent automatically fetches external data, reads your personal profile, syncs your GitHub activity, and writes a structured recommendation directly into Notion using Notion AI.
+Submit any decision — from anywhere — and a Notion Custom Agent automatically gathers your personal context, reasons over your options with Notion AI, and writes a structured recommendation directly into Notion.
+
+Two ways to trigger it:
+- **Directly in Notion** — fill in the Decision Intake database and set Status → Pending
+- **From anywhere** — run the **QuickDecisionAI** Shortcut on Mac or iPhone, answer 4 prompts, done
 
 No chatbot. No back-and-forth. No extra API costs beyond your Notion Business plan credits. Just a clear answer.
 
@@ -12,16 +16,180 @@ Built at the Notion Developer Platform Hackathon, May 2026.
 
 ## How it works
 
+### Path 1 — Notion intake form
 1. Fill in a row in the **Decision Intake** database (title, options, criteria, decision type)
-2. Set **Status → Pending** to trigger the agent
-3. A **Notion Custom Agent** fires automatically (database property trigger)
-4. The agent calls the `fetchDecisionContext` Worker tool — which fetches your intake row, your **My Profile** page, external data for the decision type, your recent GitHub repos, and content from relevant pages across your Notion workspace
-5. The Custom Agent reasons over everything with **Notion AI** (Notion credits are consumed here)
-6. The agent calls the `writeRecommendation` Worker tool — which creates a structured recommendation page inside the row and sets Status → Done
+2. Set **Status → Pending**
+3. The Custom Agent fires and runs the flow below
 
-In parallel, a **`worker.sync()`** job runs every 6 hours, pulling your public GitHub repos into a managed **GitHub Activity** Notion database. Each row shows repo name, language, stars, description, last-pushed date, and a **Last Synced** timestamp.
+### Path 2 — QuickDecisionAI Shortcut
+1. Run the **QuickDecisionAI** Shortcut (Mac or iPhone)
+2. Answer 4 prompts: decision, options, criteria, type
+3. The Shortcut POSTs to the `submitDecision` webhook
+4. The Worker creates the intake row with Status → Pending
+5. The Custom Agent fires automatically
 
-The **Notion Worker** (three capabilities: two tools + one sync) is the infrastructure layer. The Custom Agent is the AI orchestrator.
+### What the Custom Agent does (both paths)
+1. Calls `fetchDecisionContext` — fetches the intake row, your profile page, GitHub repos, Apple Health stats, and relevant pages from your Notion workspace
+2. Reasons over everything with **Notion AI** (Notion credits consumed here)
+3. Calls `writeRecommendation` — creates a structured recommendation sub-page inside the intake row and sets Status → Done
+
+The full flow takes ~30 seconds.
+
+---
+
+## Under the Hood — Notion Developer Platform primitives
+
+DecideAI is built entirely on Notion's developer primitives. No external hosting, no third-party serverless functions.
+
+### `worker.tool()` — Agent-callable tools
+
+Tools are TypeScript functions exposed to the Custom Agent. The agent decides when to call them and what to pass.
+
+**`fetchDecisionContext`**
+Returns everything the agent needs to reason: the intake row fields, the user's profile page text, personal data from GitHub and Apple Health, and markdown snippets from relevant pages across the Notion workspace. All fetches run in parallel.
+
+**`writeRecommendation`**
+Takes the agent's markdown recommendation, converts it to Notion blocks (headings, tables, paragraphs), creates a sub-page inside the intake row, links it as the Output Page, and sets Status → Done.
+
+```typescript
+worker.tool("fetchDecisionContext", {
+  schema: j.object({ pageId: j.string() }),
+  execute: async ({ pageId }, context) => {
+    // fetches intake row, profile, personal data sources, Notion workspace pages
+    return { title, options, criteria, decisionType, urgency, profile, externalData };
+  },
+});
+```
+
+### `worker.sync()` — Scheduled data sync
+
+Runs on a schedule, fetches upstream data, and upserts rows into a managed Notion database. No trigger needed — Notion runs it automatically.
+
+**`githubSync`** — runs every 6 hours, fetches your public GitHub repos via the GitHub API, and upserts them into the **GitHub Activity** database. Uses `mode: "replace"` so deleted repos are cleaned up automatically.
+
+```typescript
+worker.sync("githubSync", {
+  database: githubDb,
+  schedule: "6h",
+  mode: "replace",
+  execute: async () => {
+    // fetches repos, returns upsert changes
+    return { changes, hasMore: false };
+  },
+});
+```
+
+### `worker.database()` — Managed Notion database
+
+Declares a Notion database schema in code. Notion creates the database on first deploy and migrates it automatically on schema changes. No manual database creation needed.
+
+**`githubActivity`** — created automatically on first deploy. Populated by `githubSync`.
+
+```typescript
+const githubDb = worker.database("githubActivity", {
+  type: "managed",
+  initialTitle: "GitHub Activity",
+  primaryKeyProperty: "Repo ID",
+  schema: {
+    properties: {
+      Name: Schema.title(),
+      "Repo ID": Schema.richText(),
+      Language: Schema.richText(),
+      URL: Schema.url(),
+      "Last Pushed": Schema.date(),
+      Description: Schema.richText(),
+      Stars: Schema.number(),
+      "Last Synced": Schema.date(),
+    },
+  },
+});
+```
+
+### `worker.webhook()` — External trigger endpoint
+
+Exposes an HTTPS endpoint that any service can POST to. The Worker processes the payload and acts on it — in this case, creating a new intake row to trigger the Custom Agent.
+
+**`submitDecision`** — accepts `{ title, options, criteria, decisionType, urgency }` as JSON, creates the intake row with Status → Pending, and the Custom Agent fires automatically.
+
+```typescript
+worker.webhook("submitDecision", {
+  execute: async (events) => {
+    for (const event of events) {
+      const { title, options, criteria, decisionType, urgency } = event.body;
+      await createIntakeRow({ title, options, criteria, decisionType, urgency }, env);
+    }
+  },
+});
+```
+
+Optional auth: set `WEBHOOK_SECRET` via `ntn workers env set` and send it as the `x-decidai-secret` header.
+
+### Notion Custom Agent — AI reasoning layer
+
+A Custom Agent in Notion is the orchestration layer. It:
+- Triggers on a **database property change** (Status = Pending on the Decision Intake database)
+- Has access to the Worker tools (`fetchDecisionContext`, `writeRecommendation`)
+- Uses **Notion AI** (Notion credits) to reason over the data and produce the recommendation
+- Follows a system prompt that enforces the output format
+
+The Worker provides the data infrastructure. The Custom Agent provides the intelligence.
+
+---
+
+## QuickDecisionAI Shortcut
+
+Trigger DecideAI from Mac or iPhone without opening Notion.
+
+### Setup
+
+Build the Shortcut manually in the Shortcuts app (Mac or iPhone):
+
+| Step | Action | Config |
+|------|--------|--------|
+| 1 | Ask for Text | Prompt: `What's your decision?` |
+| 2 | Set Variable | Name: `title` → Ask for Input |
+| 3 | Ask for Text | Prompt: `Options (comma-separated)` |
+| 4 | Set Variable | Name: `options` → Ask for Input |
+| 5 | Ask for Text | Prompt: `Your criteria` |
+| 6 | Set Variable | Name: `criteria` → Ask for Input |
+| 7 | Ask for Text | Prompt: `Decision type: Tech, Career, Purchase, Travel, or Food` |
+| 8 | Set Variable | Name: `decisionType` → Ask for Input |
+| 9 | Get Contents of URL | See config below |
+| 10 | Show Notification | `DecideAI is on it! Check Notion in ~30 seconds.` |
+
+**Get Contents of URL config:**
+- URL: your webhook URL (run `ntn workers webhooks list <worker-id>` to get it)
+- Method: `POST`
+- Request Body: `JSON`
+- Keys: `title`, `options`, `criteria`, `decisionType` → their respective variables; `urgency` → text `No rush`
+
+### How it works
+
+```
+QuickDecisionAI Shortcut
+        ↓  [4 text prompts]
+POST /webhooks/.../submitDecision
+        ↓  [worker.webhook()]
+Creates intake row (Status = Pending)
+        ↓  [database property trigger]
+Notion Custom Agent fires
+        ↓  [Notion AI + worker.tool()]
+Recommendation sub-page created
+```
+
+---
+
+## Personal data sources
+
+The Worker fetches personal context from a `personalDataSources` array in `src/index.ts`. Each entry is a `() => Promise<string>` function. Adding a new source is one line.
+
+| Source | Status | What it provides |
+|--------|--------|-----------------|
+| GitHub API | Live | Public repos — name, language, stars, description |
+| Apple Health | Mocked | Steps, calories, workouts, sleep, heart rate (last 7 days) |
+| Notion workspace pages | Live | Pages matching decision keywords, fetched as markdown snippets |
+
+To wire up Apple Health for real, use [Health Auto Export](https://www.healthexportapp.com/) to push a daily JSON summary to a URL, then replace the mock in `fetchAppleHealthSummary()` with a `fetch()` call.
 
 ---
 
@@ -41,7 +209,7 @@ ntn login
 
 ### 3. Set environment variables
 
-> Note: the `NOTION_` prefix is reserved by the Workers runtime. Use `API_TOKEN` for your integration token.
+> The `NOTION_` prefix is reserved by the Workers runtime. Use `API_TOKEN` for your integration token.
 
 ```bash
 ntn workers env set API_TOKEN=<your_notion_integration_token>
@@ -57,15 +225,17 @@ npm run build
 ntn workers deploy
 ```
 
-On first deploy, Notion automatically creates the **GitHub Activity** managed database in your workspace and runs the initial sync. It will sync again every 6 hours.
+On first deploy, Notion creates the **GitHub Activity** managed database and runs the initial sync. The `submitDecision` webhook URL is printed by:
+
+```bash
+ntn workers webhooks list <worker-id>
+```
 
 ### 5. Create the Custom Agent in Notion
 
-In Notion, create a new **Custom Agent** and configure it:
-
 **Trigger:** Property updated → Decision Intake database → Status = Pending
 
-**Tools:** Attach both Worker tools — `fetchDecisionContext` and `writeRecommendation` — from your deployed Worker.
+**Tools:** Attach `fetchDecisionContext` and `writeRecommendation` from your deployed Worker.
 
 **System prompt:**
 ```
@@ -100,37 +270,15 @@ Be direct and decisive. Never hedge excessively. Reference the user profile and 
 IMPORTANT: The table must use pipe characters (|) only. Do not use HTML tags. Do not use <table>, <tr>, or <td>.
 ```
 
----
+### 6. Build the QuickDecisionAI Shortcut
 
-## Worker capabilities
-
-The deployed Worker registers three capabilities via the `@notionhq/workers` SDK:
-
-| Capability | Type | What it does |
-|------------|------|--------------|
-| `fetchDecisionContext` | `worker.tool()` | Fetches intake row + profile + external API data + GitHub summary |
-| `writeRecommendation` | `worker.tool()` | Creates recommendation sub-page, sets Status → Done |
-| `githubSync` | `worker.sync()` | Syncs public GitHub repos into managed Notion database every 6h |
-
----
-
-## Personal data sources
-
-The Worker fetches personal context from a `personalDataSources` array — each entry is a function that returns a formatted string. Adding a new source is one line.
-
-| Source | Status | What it provides |
-|--------|--------|-----------------|
-| GitHub API | Live | Your public repos — name, language, stars, description |
-| Apple Health | Mocked | Steps, calories, workouts, sleep, heart rate (last 7 days) |
-| Notion workspace pages | Live | Pages matching the decision keywords, fetched as markdown snippets |
-
-To wire up Apple Health for real, use [Health Auto Export](https://www.healthexportapp.com/) to push a daily JSON summary to a URL, then replace the mock in `fetchAppleHealthSummary()` with a fetch call.
+Follow the Shortcut setup steps in the [QuickDecisionAI Shortcut](#quickdecisionai-shortcut) section above.
 
 ---
 
 ## GitHub Activity database
 
-After deploy, a **GitHub Activity** database appears automatically in your Notion workspace. It is declared via `worker.database()` and populated by `worker.sync()`. Each row contains:
+Declared via `worker.database()`, populated by `worker.sync()` every 6 hours. Appears automatically in your workspace on first deploy.
 
 | Column | Source |
 |--------|--------|
@@ -166,14 +314,14 @@ This simulates what the Custom Agent does: calls `fetchDecisionContext`, prints 
 ## Example
 
 ```
-Title:         Should I get a dog?
-Options:       Adopt a rescue, Buy from breeder, Foster first
-My Criteria:   I travel often, small apartment, budget under $500
-Decision Type: Purchase
+Title:         Should I build my next side project in Rust?
+Options:       Rust, Go, stick with Python
+My Criteria:   Career growth, hiring market, I already know Python well
+Decision Type: Tech
 Urgency:       No rush
 ```
 
-Set **Status → Pending**. The Custom Agent fires, reasons with Notion AI, and a recommendation sub-page appears inside that row within ~30 seconds.
+Set **Status → Pending** (or run the Shortcut). The Custom Agent fires, pulls your GitHub repos and Apple Health context, reasons with Notion AI, and a recommendation sub-page appears inside the row within ~30 seconds.
 
 ---
 
@@ -184,6 +332,8 @@ Set **Status → Pending**. The Custom Agent fires, reasons with Notion AI, and 
 | Status stays **Pending** | Custom Agent not configured or trigger not set | Create the Custom Agent with the database property trigger |
 | Status flips to **Error** | Worker tool threw an error | Check logs: `ntn workers runs list <worker-id>` → `ntn workers runs logs <run-id>` |
 | Output Page is empty | `writeRecommendation` tool failed | Same as above — check Worker logs |
-| Profile text missing | Integration lacks access to My Profile page | Share the profile page with your integration in Notion settings |
+| Profile text missing | Integration lacks access to My Profile page | Open the page in Notion → `...` menu → Connections → add your integration |
 | No credits consumed | Custom Agent not running | Verify trigger is set to "Status = Pending" on the correct database |
-| GitHub Activity database missing | First deploy didn't complete | Re-run `ntn workers deploy` and check for sync run in `ntn workers runs list` |
+| GitHub Activity database missing | First deploy didn't complete | Re-run `ntn workers deploy` |
+| Shortcut POST fails | Wrong webhook URL | Run `ntn workers webhooks list <worker-id>` and update the URL in the Shortcut |
+| Row created but agent doesn't fire | Webhook worked but Custom Agent trigger not set | Verify the Custom Agent trigger is Status = Pending on the Decision Intake database |
