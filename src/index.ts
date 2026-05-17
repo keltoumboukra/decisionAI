@@ -1,5 +1,5 @@
 import { Worker } from "@notionhq/workers";
-import { fetchProfileText, fetchIntakeRow, createRecommendationPage, updateIntakeRow, recommendationToBlocks, type Env } from "./notion.js";
+import { fetchProfileText, fetchIntakeRow, createRecommendationPage, updateIntakeRow, setErrorStatus, recommendationToBlocks, type Env } from "./notion.js";
 import { callNotionAI } from "./notionai.js";
 import { fetchExternalData } from "./external.js";
 
@@ -11,7 +11,7 @@ worker.webhook("onDecisionIntake", {
   description: "Triggered when a new row is added to the Decision Intake database. Fetches external data, calls Notion AI, and writes a structured recommendation page.",
   execute: async (events) => {
     const env: Env = {
-      NOTION_TOKEN: process.env.NOTION_TOKEN!,
+      NOTION_TOKEN: process.env.API_TOKEN!,  // NOTION_ prefix is reserved by Workers runtime
       PROFILE_PAGE_ID: process.env.PROFILE_PAGE_ID!,
       INTAKE_DATABASE_ID: process.env.INTAKE_DATABASE_ID!,
     };
@@ -79,6 +79,7 @@ worker.webhook("onDecisionIntake", {
         console.log(`[DecideAI] Done — Status=Done, Output Page linked`);
       } catch (err: any) {
         console.error(`[DecideAI] Error processing ${pageId}:`, err.message);
+        try { await setErrorStatus(pageId, env); } catch {}
       }
     }
   },

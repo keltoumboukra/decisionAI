@@ -88,6 +88,20 @@ export async function updateIntakeRow(pageId, pageUrl, env) {
   }
 }
 
+export async function setErrorStatus(pageId, env) {
+  const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: "PATCH",
+    headers: headers(env.NOTION_TOKEN),
+    body: JSON.stringify({
+      properties: { Status: { select: { name: "Error" } } },
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    console.error(`setErrorStatus failed (${res.status}): ${err.message ?? JSON.stringify(err)}`);
+  }
+}
+
 export function recommendationToBlocks(text) {
   const blocks = [];
   const lines = text.split("\n");

@@ -104,3 +104,14 @@ Urgency:       No rush
 ```
 
 Set **Status → Pending**. A recommendation sub-page appears inside that row within 15 seconds.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Status stays **Pending** | Worker not deployed or automation not configured | Run `ntn workers deploy` and verify the automation trigger |
+| Status flips to **Error** | Pipeline failed mid-run | Check logs: `ntn workers runs list <worker-id>` → `ntn workers runs logs <run-id>` |
+| Output Page is empty | Worker ran but page creation failed | Same as above — check logs for the specific error |
+| Profile text missing | Integration lacks access to My Profile page | Share the profile page with your integration in Notion settings |

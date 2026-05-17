@@ -82,6 +82,20 @@ export async function createRecommendationPage(
   return { id: page.id, url: page.url };
 }
 
+export async function setErrorStatus(pageId: string, env: Env) {
+  const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
+    method: "PATCH",
+    headers: headers(env.NOTION_TOKEN),
+    body: JSON.stringify({
+      properties: { Status: { select: { name: "Error" } } },
+    }),
+  });
+  if (!res.ok) {
+    const err: any = await res.json();
+    console.error(`setErrorStatus failed (${res.status}): ${err.message ?? JSON.stringify(err)}`);
+  }
+}
+
 export async function updateIntakeRow(pageId: string, pageUrl: string, env: Env) {
   const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
     method: "PATCH",

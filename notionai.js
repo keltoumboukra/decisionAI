@@ -215,7 +215,10 @@ export async function callNotionAI({ profile, title, options, criteria, external
       }),
     });
 
-    if (!res.ok) throw new Error(`Notion AI returned ${res.status}`);
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`Notion AI returned ${res.status}: ${errBody}`);
+    }
     const result = await res.json();
     if (!result.generated_text) throw new Error("Empty response from Notion AI");
     return result.generated_text;
