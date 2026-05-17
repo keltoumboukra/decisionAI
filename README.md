@@ -2,7 +2,7 @@
 
 An autonomous decision agent built on the Notion Developer Platform.
 
-Submit any decision to the Notion intake form — buying a car, choosing a city, picking a phone — and a Notion Custom Agent automatically fetches external data, reads your personal profile, and writes a structured recommendation directly into Notion using Notion AI.
+Submit any decision to the Notion intake form — buying a car, choosing a city, picking a phone — and a Notion Custom Agent automatically fetches external data, reads your personal profile, syncs your GitHub activity, and writes a structured recommendation directly into Notion using Notion AI.
 
 No chatbot. No back-and-forth. No extra API costs beyond your Notion Business plan credits. Just a clear answer.
 
@@ -15,11 +15,13 @@ Built at the Notion Developer Platform Hackathon, May 2026.
 1. Fill in a row in the **Decision Intake** database (title, options, criteria, decision type)
 2. Set **Status → Pending** to trigger the agent
 3. A **Notion Custom Agent** fires automatically (database property trigger)
-4. The agent calls the `fetchDecisionContext` Worker tool — which fetches your intake row, your **My Profile** page, and external data for the decision type
+4. The agent calls the `fetchDecisionContext` Worker tool — which fetches your intake row, your **My Profile** page, external data for the decision type, and your recent GitHub repos
 5. The Custom Agent reasons over everything with **Notion AI** (Notion credits are consumed here)
 6. The agent calls the `writeRecommendation` Worker tool — which creates a structured recommendation page inside the row and sets Status → Done
 
-The **Notion Worker** (with two tools) is the infrastructure layer. The Custom Agent is the AI orchestrator.
+In parallel, a **`worker.sync()`** job runs every 6 hours, pulling your public GitHub repos into a managed **GitHub Activity** Notion database. Each row shows repo name, language, stars, description, last-pushed date, and a **Last Synced** timestamp.
+
+The **Notion Worker** (three capabilities: two tools + one sync) is the infrastructure layer. The Custom Agent is the AI orchestrator.
 
 ---
 
@@ -54,6 +56,8 @@ npm install
 npm run build
 ntn workers deploy
 ```
+
+On first deploy, Notion automatically creates the **GitHub Activity** managed database in your workspace and runs the initial sync. It will sync again every 6 hours.
 
 ### 5. Create the Custom Agent in Notion
 
@@ -98,15 +102,45 @@ IMPORTANT: The table must use pipe characters (|) only. Do not use HTML tags. Do
 
 ---
 
-## Decision types and external data sources
+## Worker capabilities
 
-| Type | External API |
-|------|-------------|
+The deployed Worker registers three capabilities via the `@notionhq/workers` SDK:
+
+| Capability | Type | What it does |
+|------------|------|--------------|
+| `fetchDecisionContext` | `worker.tool()` | Fetches intake row + profile + external API data + GitHub summary |
+| `writeRecommendation` | `worker.tool()` | Creates recommendation sub-page, sets Status → Done |
+| `githubSync` | `worker.sync()` | Syncs public GitHub repos into managed Notion database every 6h |
+
+---
+
+## External data sources
+
+| Decision type | External API |
+|---------------|-------------|
 | Purchase | NHTSA vehicle safety / complaints data |
 | Tech | Wikipedia search API |
 | Travel | REST Countries API |
 | Career | Remotive remote jobs API |
 | Food | TheMealDB API |
+| All types | GitHub public repos (recent activity) |
+
+---
+
+## GitHub Activity database
+
+After deploy, a **GitHub Activity** database appears automatically in your Notion workspace. It is declared via `worker.database()` and populated by `worker.sync()`. Each row contains:
+
+| Column | Source |
+|--------|--------|
+| Name | Repo name |
+| Repo ID | GitHub numeric ID (primary key) |
+| Language | Primary language |
+| URL | GitHub repo URL |
+| Last Pushed | Date of last git push |
+| Description | Repo description |
+| Stars | Star count |
+| Last Synced | Timestamp of the most recent sync run |
 
 ---
 
@@ -151,3 +185,4 @@ Set **Status → Pending**. The Custom Agent fires, reasons with Notion AI, and 
 | Output Page is empty | `writeRecommendation` tool failed | Same as above — check Worker logs |
 | Profile text missing | Integration lacks access to My Profile page | Share the profile page with your integration in Notion settings |
 | No credits consumed | Custom Agent not running | Verify trigger is set to "Status = Pending" on the correct database |
+| GitHub Activity database missing | First deploy didn't complete | Re-run `ntn workers deploy` and check for sync run in `ntn workers runs list` |

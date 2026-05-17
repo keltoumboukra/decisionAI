@@ -4,6 +4,8 @@
 An autonomous decision agent for the Notion Developer Platform Hackathon (May 2026).
 When a user sets a row's Status to "Pending" in the Decision Intake database, a **Notion Custom Agent** triggers, calls two Worker tools to fetch context and write the result, and produces a structured recommendation sub-page — powered by Notion AI (using Notion credits).
 
+A `worker.sync()` job also runs every 6 hours, pulling the user's public GitHub repos into a managed Notion database ("GitHub Activity") and appending a GitHub summary to the decision context.
+
 ## Architecture
 
 ```
@@ -11,20 +13,37 @@ Notion Database (Status → Pending)
         ↓  [database property trigger on Custom Agent]
 Notion Custom Agent  ← AI reasoning here (Notion credits consumed)
         ↓
-  call fetchDecisionContext(pageId)   ← Worker tool
-  returns: title, options, criteria, decisionType, urgency, profile, externalData
+  call fetchDecisionContext(pageId)   ← worker.tool()
+  returns: title, options, criteria, decisionType, urgency,
+           profile, externalData (API data + GitHub summary)
         ↓
   Agent reasons with AI, produces structured recommendation markdown
         ↓
-  call writeRecommendation(pageId, title, recommendation)  ← Worker tool
+  call writeRecommendation(pageId, title, recommendation)  ← worker.tool()
   creates sub-page, sets Status=Done, links Output Page
+
+── scheduled, independent ──────────────────────────────────────
+  worker.sync("githubSync") runs every 6h
+  → fetches public repos from GitHub API (no auth)
+  → upserts rows in "GitHub Activity" managed Notion database
+    (Name, Repo ID, Language, URL, Last Pushed, Description, Stars, Last Synced)
 ```
 
-The Worker exposes two tools. The Custom Agent is the orchestrator and AI layer.
+## Worker capabilities (3 total)
+
+| Capability | SDK primitive | Schedule |
+|------------|--------------|----------|
+| `fetchDecisionContext` | `worker.tool()` | On-demand (called by Custom Agent) |
+| `writeRecommendation` | `worker.tool()` | On-demand (called by Custom Agent) |
+| `githubSync` | `worker.sync()` | Every 6h, replace mode |
+
+The `githubActivity` database is declared with `worker.database()` and managed automatically by Notion.
 
 ## Stack
 - **Notion Workers** (Beta) — serverless TypeScript runtime, deployed via `ntn` CLI
-- **`@notionhq/workers` SDK** — `Worker` class, `worker.tool()`
+- **`@notionhq/workers` SDK** — `Worker` class, `worker.tool()`, `worker.sync()`, `worker.database()`
+- **`@notionhq/workers/builder`** — `Builder.title()`, `Builder.richText()`, `Builder.url()`, `Builder.date()`, `Builder.dateTime()`, `Builder.number()`
+- **`@notionhq/workers/schema`** — `Schema.title()`, `Schema.richText()`, `Schema.url()`, `Schema.date()`, `Schema.number()`
 - **Notion Custom Agent** — AI reasoning layer, triggers on Status → Pending, consumes Notion credits
 - **Notion REST API** v1 (2022-06-28)
 - TypeScript: `module: nodenext`, `rootDir: ./src`, `outDir: ./dist`
@@ -52,6 +71,16 @@ In `src/index.ts`, `process.env.API_TOKEN` is mapped to `env.NOTION_TOKEN` inter
 - `Urgency` (select: This month / No rush / etc.)
 - `Status` (select: Pending → Done / Error)
 - `Output Page` (url, set by writeRecommendation tool)
+
+## GitHub Activity database (managed by worker.database())
+- `Name` (title)
+- `Repo ID` (rich_text, primary key)
+- `Language` (rich_text)
+- `URL` (url)
+- `Last Pushed` (date)
+- `Description` (rich_text)
+- `Stars` (number)
+- `Last Synced` (date — datetime of the sync run that last updated this row)
 
 ## Custom Agent setup (do this once in Notion UI)
 
@@ -95,7 +124,7 @@ IMPORTANT: The table must use pipe characters (|) only. Do not use HTML tags. Do
 ## File layout
 ```
 src/
-  index.ts      — worker entry point: fetchDecisionContext + writeRecommendation tools
+  index.ts      — worker entry point: 2 tools + 1 sync + database declaration
   notion.ts     — Notion API helpers (fetchIntakeRow, createRecommendationPage, etc.)
   external.ts   — fetchExternalData (routes by decision type)
 notion.js       — plain JS copy of notion.ts (used by test.js)
@@ -129,9 +158,10 @@ ntn workers runs logs <run-id>
 | Travel | REST Countries API |
 | Career | Remotive remote jobs API |
 | Food | TheMealDB API |
+| All | GitHub public repos (recent activity, no auth) |
 
 ## What's working
-- Worker deployed with two tools: `fetchDecisionContext` and `writeRecommendation` ✅
+- Worker deployed with 3 capabilities: `fetchDecisionContext`, `writeRecommendation`, `githubSync` ✅
 - Custom Agent (DecideAI) created, trigger set to Status = Pending on Decision Intake ✅
 - Agent calls both tools, reasons with Notion AI, Notion credits consumed ✅
 - Recommendation created as sub-page inside intake row with proper Notion table blocks ✅
@@ -140,6 +170,10 @@ ntn workers runs logs <run-id>
 - External data fetched per decision type ✅
 - `fetchDecisionContext` handles any page reference format (UUID, URL, page mention) ✅
 - Falls back to querying the DB for most recent Pending row if no valid ID extracted ✅
+- GitHub repos fetched and appended to externalData in every fetchDecisionContext call ✅
+- `worker.sync()` syncs public GitHub repos to managed Notion database every 6h ✅
+- `worker.database()` declares GitHub Activity DB with schema (Name, Language, URL, Stars, Last Synced…) ✅
+- Last Synced timestamp written to each row on every sync run ✅
 
 ## Test case
 ```

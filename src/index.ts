@@ -35,6 +35,7 @@ const githubDb = worker.database("githubActivity", {
       "Last Pushed": Schema.date(),
       Description: Schema.richText(),
       Stars: Schema.number(),
+      "Last Synced": Schema.date(),
     },
   },
 });
@@ -50,6 +51,7 @@ worker.sync("githubSync", {
       { headers: { "User-Agent": "DecideAI-Worker" } }
     );
     const repos: any[] = await res.json();
+    const syncedAt = new Date().toISOString();
     const changes = repos
       .filter((r) => !r.fork)
       .map((r) => ({
@@ -64,6 +66,7 @@ worker.sync("githubSync", {
           "Last Pushed": Builder.date(r.pushed_at ? r.pushed_at.slice(0, 10) : "2000-01-01"),
           Description: Builder.richText(r.description ?? ""),
           Stars: Builder.number(r.stargazers_count ?? 0),
+          "Last Synced": Builder.dateTime(syncedAt),
         },
       }));
     return { changes, hasMore: false };
