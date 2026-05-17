@@ -15,7 +15,7 @@ Built at the Notion Developer Platform Hackathon, May 2026.
 1. Fill in a row in the **Decision Intake** database (title, options, criteria, decision type)
 2. Set **Status → Pending** to trigger the agent
 3. A **Notion Custom Agent** fires automatically (database property trigger)
-4. The agent calls the `fetchDecisionContext` Worker tool — which fetches your intake row, your **My Profile** page, external data for the decision type, and your recent GitHub repos
+4. The agent calls the `fetchDecisionContext` Worker tool — which fetches your intake row, your **My Profile** page, external data for the decision type, your recent GitHub repos, and content from relevant pages across your Notion workspace
 5. The Custom Agent reasons over everything with **Notion AI** (Notion credits are consumed here)
 6. The agent calls the `writeRecommendation` Worker tool — which creates a structured recommendation page inside the row and sets Status → Done
 
@@ -124,6 +124,7 @@ The deployed Worker registers three capabilities via the `@notionhq/workers` SDK
 | Career | Remotive remote jobs API |
 | Food | TheMealDB API |
 | All types | GitHub public repos (recent activity) |
+| All types | Notion workspace pages (search by decision keywords, markdown content) |
 
 ---
 

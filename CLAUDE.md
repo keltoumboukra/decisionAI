@@ -15,7 +15,7 @@ Notion Custom Agent  ← AI reasoning here (Notion credits consumed)
         ↓
   call fetchDecisionContext(pageId)   ← worker.tool()
   returns: title, options, criteria, decisionType, urgency,
-           profile, externalData (API data + GitHub summary)
+           profile, externalData (API data + GitHub summary + Notion page snippets)
         ↓
   Agent reasons with AI, produces structured recommendation markdown
         ↓
@@ -38,6 +38,15 @@ Notion Custom Agent  ← AI reasoning here (Notion credits consumed)
 | `githubSync` | `worker.sync()` | Every 6h, replace mode |
 
 The `githubActivity` database is declared with `worker.database()` and managed automatically by Notion.
+
+## What fetchDecisionContext returns
+
+`externalData` is a combined string built from three parallel fetches:
+1. **External API data** — routed by Decision Type (NHTSA / Wikipedia / REST Countries / Remotive / TheMealDB)
+2. **GitHub summary** — top 8 public repos for `keltoumboukra` fetched live from GitHub API (name, language, stars, description)
+3. **Notion workspace pages** — `context.notion.search()` finds up to 4 pages matching the decision title + options + type; `pages.retrieveMarkdown()` fetches their content (500 char snippets each)
+
+All three are joined and returned as `externalData`. The profile page text is returned separately as `profile`.
 
 ## Stack
 - **Notion Workers** (Beta) — serverless TypeScript runtime, deployed via `ntn` CLI
@@ -174,6 +183,9 @@ ntn workers runs logs <run-id>
 - `worker.sync()` syncs public GitHub repos to managed Notion database every 6h ✅
 - `worker.database()` declares GitHub Activity DB with schema (Name, Language, URL, Stars, Last Synced…) ✅
 - Last Synced timestamp written to each row on every sync run ✅
+- Workspace page search: `context.notion.search()` finds relevant pages by decision keywords ✅
+- `pages.retrieveMarkdown()` fetches content of matched pages, included as snippets in externalData ✅
+- Integration must be connected to pages in Notion UI for search to return results ✅
 
 ## Test case
 ```
