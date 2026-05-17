@@ -64,9 +64,9 @@ In `src/index.ts`, `process.env.API_TOKEN` is mapped to `env.NOTION_TOKEN` inter
 You are DecideAI, a structured decision advisor inside Notion.
 
 When triggered:
-1. Call fetchDecisionContext with the page ID from the trigger
-2. Reason carefully over the decision using the user's profile, their stated criteria, the options, and the external data provided
-3. Produce a structured recommendation in this exact format:
+1. Call fetchDecisionContext — pass any page reference you have as pageId (a URL, ID, or page name all work). The tool returns the decision data along with a pageId field.
+2. Reason carefully over the decision using the user's profile, their stated criteria, the options, and the external data provided.
+3. Produce a structured recommendation in EXACTLY this format — use pipe-separated markdown for the table, not HTML:
 
 ## 🎯 Recommendation
 [Single decisive sentence — pick one option]
@@ -74,7 +74,8 @@ When triggered:
 ## 📊 Options Compared
 | Option | Pros | Cons | Fit Score /10 |
 |--------|------|------|----------------|
-[one row per option]
+| Option A | strength | weakness | 8 |
+| Option B | strength | weakness | 6 |
 
 ## 🔍 Key Insight
 [One paragraph referencing the profile and external data]
@@ -85,9 +86,10 @@ When triggered:
 ## ✅ Next step
 [One action to take in the next 48 hours]
 
-4. Call writeRecommendation with the pageId, the decision title, and your full recommendation text.
+4. Call writeRecommendation — use the pageId returned by fetchDecisionContext (not the original trigger reference), the decision title, and your full recommendation text.
 
 Be direct and decisive. Never hedge excessively. Reference the user profile and external data in your reasoning.
+IMPORTANT: The table must use pipe characters (|) only. Do not use HTML tags. Do not use <table>, <tr>, or <td>.
 ```
 
 ## File layout
@@ -130,16 +132,14 @@ ntn workers runs logs <run-id>
 
 ## What's working
 - Worker deployed with two tools: `fetchDecisionContext` and `writeRecommendation` ✅
-- Custom Agent triggers on Status → Pending (database property trigger) ✅
+- Custom Agent (DecideAI) created, trigger set to Status = Pending on Decision Intake ✅
+- Agent calls both tools, reasons with Notion AI, Notion credits consumed ✅
+- Recommendation created as sub-page inside intake row with proper Notion table blocks ✅
+- Status flips to Done on success, Error on failure ✅
+- Profile page text fetched and passed to Custom Agent for personalisation ✅
 - External data fetched per decision type ✅
-- Recommendation created as sub-page inside intake row ✅
-- Notion table blocks rendered properly ✅
-- Status flips to Error on pipeline failure ✅
-- Profile page text fetched and passed to Custom Agent ✅
-
-## What's NOT done yet
-- **Custom Agent wiring** — needs to be created in Notion UI with both tools and the system prompt above
-- **End-to-end test with credits** — verify credits are consumed when Custom Agent runs
+- `fetchDecisionContext` handles any page reference format (UUID, URL, page mention) ✅
+- Falls back to querying the DB for most recent Pending row if no valid ID extracted ✅
 
 ## Test case
 ```
