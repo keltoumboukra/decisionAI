@@ -1,10 +1,15 @@
 import { Worker } from "@notionhq/workers";
 import { j } from "@notionhq/workers/schema-builder";
-import { fetchProfileText, fetchIntakeRow, createRecommendationPage, updateIntakeRow, recommendationToBlocks, type Env } from "./notion.js";
+import { fetchProfileText, fetchIntakeRow, queryPendingRow, createRecommendationPage, updateIntakeRow, recommendationToBlocks, type Env } from "./notion.js";
 import { fetchExternalData } from "./external.js";
 
 const worker = new Worker();
 export default worker;
+
+function extractUUID(input: string): string | null {
+  const match = input.replace(/-/g, "").match(/[0-9a-f]{32}/i);
+  return match ? match[0] : null;
+}
 
 function makeEnv(): Env {
   return {
@@ -21,6 +26,7 @@ worker.tool("fetchDecisionContext", {
     pageId: j.string().describe("Notion page ID of the decision intake row"),
   }),
   outputSchema: j.object({
+    pageId: j.string(),
     title: j.string(),
     options: j.string(),
     criteria: j.string(),
@@ -32,7 +38,10 @@ worker.tool("fetchDecisionContext", {
   hints: { readOnlyHint: true },
   execute: async ({ pageId }) => {
     const env = makeEnv();
-    const row = await fetchIntakeRow(pageId, env);
+    const uuid = extractUUID(pageId);
+    const row = uuid
+      ? { ...(await fetchIntakeRow(uuid, env)), pageId: uuid }
+      : await queryPendingRow(env);
     const [profile, externalData] = await Promise.all([
       fetchProfileText(env),
       fetchExternalData(row.decisionType, row.options),
@@ -54,9 +63,10 @@ worker.tool("writeRecommendation", {
   }),
   execute: async ({ pageId, title, recommendation }) => {
     const env = makeEnv();
+    const uuid = extractUUID(pageId) ?? (await queryPendingRow(env)).pageId;
     const blocks = recommendationToBlocks(recommendation);
-    const { url } = await createRecommendationPage(title, blocks, env, pageId);
-    await updateIntakeRow(pageId, url, env);
+    const { url } = await createRecommendationPage(title, blocks, env, uuid);
+    await updateIntakeRow(uuid, url, env);
     return { url };
   },
 });

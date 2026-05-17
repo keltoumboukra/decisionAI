@@ -32,6 +32,34 @@ export async function fetchProfileText(env: Env): Promise<string> {
     .join("\n");
 }
 
+export async function queryPendingRow(env: Env): Promise<{ pageId: string; title: string; options: string; criteria: string; decisionType: string; urgency: string }> {
+  const res = await fetch(`${NOTION_API}/databases/${env.INTAKE_DATABASE_ID}/query`, {
+    method: "POST",
+    headers: headers(env.NOTION_TOKEN),
+    body: JSON.stringify({
+      filter: { property: "Status", select: { equals: "Pending" } },
+      sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+      page_size: 1,
+    }),
+  });
+  const data: any = await res.json();
+  if (!res.ok) throw new Error(`queryPendingRow failed (${res.status}): ${data.message ?? JSON.stringify(data)}`);
+  const page = data.results?.[0];
+  if (!page) throw new Error("No pending rows found in Decision Intake database");
+  const props = page.properties;
+  const getText = (p: any) => p?.rich_text?.map((t: any) => t.plain_text).join("") ?? "";
+  const getTitle = (p: any) => p?.title?.map((t: any) => t.plain_text).join("") ?? "";
+  const getSelect = (p: any) => p?.select?.name ?? "";
+  return {
+    pageId: page.id,
+    title: getTitle(props.Title),
+    options: getText(props.Options),
+    criteria: getText(props["My Criteria"]),
+    decisionType: getSelect(props["Decision Type"]),
+    urgency: getSelect(props.Urgency),
+  };
+}
+
 export async function fetchIntakeRow(pageId: string, env: Env) {
   const res = await fetch(`${NOTION_API}/pages/${pageId}`, {
     headers: headers(env.NOTION_TOKEN),
