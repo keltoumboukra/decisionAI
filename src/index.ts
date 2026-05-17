@@ -105,10 +105,10 @@ async function fetchAppleHealthSummary(): Promise<string> {
 - Resting heart rate: 58 bpm`;
 }
 
-// Add more personal data sources here — each returns a formatted string summary
-const personalDataSources: Array<() => Promise<string>> = [
-  fetchGitHubSummary,
-  fetchAppleHealthSummary,
+// Add more personal data sources here — each has a name (shown in recommendation footer) and a fetch function
+const personalDataSources: Array<{ name: string; fetch: () => Promise<string> }> = [
+  { name: "GitHub repos", fetch: fetchGitHubSummary },
+  { name: "Apple Health", fetch: fetchAppleHealthSummary },
 ];
 
 // Searches the Notion workspace for pages related to the decision query,
@@ -169,6 +169,7 @@ worker.tool("fetchDecisionContext", {
     urgency: j.string(),
     profile: j.string(),
     externalData: j.string(),
+    sourcesUsed: j.array(j.string()),
   }),
   hints: { readOnlyHint: true },
   execute: async ({ pageId }, context) => {
@@ -181,10 +182,15 @@ worker.tool("fetchDecisionContext", {
     const [profile, notionPages, sourceResults] = await Promise.all([
       fetchProfileText(env),
       fetchRelevantNotionPages(searchQuery, row.pageId, context),
-      Promise.all(personalDataSources.map(fn => fn())),
+      Promise.all(personalDataSources.map(s => s.fetch().then(result => ({ name: s.name, result })))),
     ]);
-    const combinedExternal = [...sourceResults, notionPages].filter(Boolean).join("\n\n");
-    return { ...row, profile, externalData: combinedExternal };
+    const sourcesUsed = [
+      "My Profile",
+      ...sourceResults.filter(s => s.result.trim()).map(s => s.name),
+      ...(notionPages.trim() ? ["Notion workspace pages"] : []),
+    ];
+    const combinedExternal = [...sourceResults.map(s => s.result), notionPages].filter(Boolean).join("\n\n");
+    return { ...row, profile, externalData: combinedExternal, sourcesUsed };
   },
 });
 
@@ -195,14 +201,28 @@ worker.tool("writeRecommendation", {
     pageId: j.string().describe("Notion page ID of the decision intake row"),
     title: j.string().describe("The decision title, used to name the sub-page"),
     recommendation: j.string().describe("Full recommendation in markdown (## headings, table, paragraphs)"),
+    sourcesUsed: j.array(j.string()).describe("List of data sources used, from fetchDecisionContext output"),
   }),
   outputSchema: j.object({
     url: j.string().describe("URL of the created recommendation page"),
   }),
-  execute: async ({ pageId, title, recommendation }) => {
+  execute: async ({ pageId, title, recommendation, sourcesUsed }) => {
     const env = makeEnv();
     const uuid = extractUUID(pageId) ?? (await queryPendingRow(env)).pageId;
     const blocks = recommendationToBlocks(recommendation);
+    if (sourcesUsed && sourcesUsed.length > 0) {
+      blocks.push({ type: "divider", divider: {} });
+      blocks.push({
+        type: "paragraph",
+        paragraph: {
+          rich_text: [{
+            type: "text",
+            text: { content: `📚 Sources: ${sourcesUsed.join(" · ")}` },
+            annotations: { italic: true, color: "gray" },
+          }],
+        },
+      });
+    }
     const { url } = await createRecommendationPage(title, blocks, env, uuid);
     await updateIntakeRow(uuid, url, env);
     return { url };

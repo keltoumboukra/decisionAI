@@ -125,7 +125,7 @@ When triggered:
 ## ✅ Next step
 [One action to take in the next 48 hours]
 
-4. Call writeRecommendation — use the pageId returned by fetchDecisionContext (not the original trigger reference), the decision title, and your full recommendation text.
+4. Call writeRecommendation — use the pageId returned by fetchDecisionContext (not the original trigger reference), the decision title, your full recommendation text, and the sourcesUsed array returned by fetchDecisionContext.
 
 Be direct and decisive. Never hedge excessively. Reference the user profile and external data in your reasoning.
 IMPORTANT: The table must use pipe characters (|) only. Do not use HTML tags. Do not use <table>, <tr>, or <td>.
