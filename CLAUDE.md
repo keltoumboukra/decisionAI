@@ -4,7 +4,7 @@
 An autonomous decision agent for the Notion Developer Platform Hackathon (May 2026).
 When a user sets a row's Status to "Pending" in the Decision Intake database, a **Notion Custom Agent** triggers, calls two Worker tools to fetch context and write the result, and produces a structured recommendation sub-page — powered by Notion AI (using Notion credits).
 
-A `worker.sync()` job also runs every 6 hours, pulling the user's public GitHub repos into a managed Notion database ("GitHub Activity"). GitHub data and Apple Health data (mocked) are fetched as personal data sources on every decision.
+A `worker.sync()` job also runs continuously, pulling the user's public GitHub repos into a managed Notion database ("GitHub Activity"). GitHub data and Apple Health data (mocked) are fetched as personal data sources on every decision.
 
 ## Architecture
 
@@ -35,7 +35,7 @@ Notion Custom Agent  ← AI reasoning here (Notion credits consumed)
 |------------|--------------|----------|
 | `fetchDecisionContext` | `worker.tool()` | On-demand (called by Custom Agent) |
 | `writeRecommendation` | `worker.tool()` | On-demand (called by Custom Agent) |
-| `githubSync` | `worker.sync()` | Every 6h, replace mode |
+| `githubSync` | `worker.sync()` | Continuous, replace mode |
 
 The `githubActivity` database is declared with `worker.database()` and managed automatically by Notion.
 
@@ -177,7 +177,7 @@ To add a new source: write a `() => Promise<string>` function and append it to t
 - `fetchDecisionContext` handles any page reference format (UUID, URL, page mention) ✅
 - Falls back to querying the DB for most recent Pending row if no valid ID extracted ✅
 - GitHub repos fetched and appended to externalData in every fetchDecisionContext call ✅
-- `worker.sync()` syncs public GitHub repos to managed Notion database every 6h ✅
+- `worker.sync()` syncs public GitHub repos to managed Notion database continuously ✅
 - `worker.database()` declares GitHub Activity DB with schema (Name, Language, URL, Stars, Last Synced…) ✅
 - Last Synced timestamp written to each row on every sync run ✅
 - Workspace page search: `context.notion.search()` finds relevant pages by decision keywords ✅

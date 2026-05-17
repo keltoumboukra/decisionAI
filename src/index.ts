@@ -43,7 +43,7 @@ const githubDb = worker.database("githubActivity", {
 // Pulls public repos for keltoumboukra every 6 hours
 worker.sync("githubSync", {
   database: githubDb,
-  schedule: "6h",
+  schedule: "continuous",
   mode: "replace",
   execute: async () => {
     const res = await fetch(

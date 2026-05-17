@@ -65,12 +65,12 @@ worker.tool("fetchDecisionContext", {
 
 Runs on a schedule, fetches upstream data, and upserts rows into a managed Notion database. No trigger needed — Notion runs it automatically.
 
-**`githubSync`** — runs every 6 hours, fetches your public GitHub repos via the GitHub API, and upserts them into the **GitHub Activity** database. Uses `mode: "replace"` so deleted repos are cleaned up automatically.
+**`githubSync`** — runs continuously (at maximum frequency allowed by Notion), fetches your public GitHub repos via the GitHub API, and upserts them into the **GitHub Activity** database. Uses `mode: "replace"` so deleted repos are cleaned up automatically.
 
 ```typescript
 worker.sync("githubSync", {
   database: githubDb,
-  schedule: "6h",
+  schedule: "continuous",
   mode: "replace",
   execute: async () => {
     // fetches repos, returns upsert changes
@@ -278,7 +278,7 @@ Follow the Shortcut setup steps in the [QuickDecisionAI Shortcut](#quickdecision
 
 ## GitHub Activity database
 
-Declared via `worker.database()`, populated by `worker.sync()` every 6 hours. Appears automatically in your workspace on first deploy.
+Declared via `worker.database()`, populated by `worker.sync()` running continuously. Appears automatically in your workspace on first deploy.
 
 | Column | Source |
 |--------|--------|
