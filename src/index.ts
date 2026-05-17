@@ -4,7 +4,6 @@ import { j } from "@notionhq/workers/schema-builder";
 import * as Builder from "@notionhq/workers/builder";
 import * as Schema from "@notionhq/workers/schema";
 import { fetchProfileText, fetchIntakeRow, queryPendingRow, createRecommendationPage, updateIntakeRow, recommendationToBlocks, type Env } from "./notion.js";
-import { fetchExternalData } from "./external.js";
 
 const worker = new Worker();
 export default worker;
@@ -96,6 +95,22 @@ async function fetchGitHubSummary(): Promise<string> {
   }
 }
 
+// Mocked — replace with real fetch from Health Auto Export or a Notion page once wired up
+async function fetchAppleHealthSummary(): Promise<string> {
+  return `Apple Health (last 7 days):
+- Daily steps avg: 8,432 (goal: 10,000)
+- Active calories avg: 480 kcal/day
+- Workout sessions: 4 (2× strength training, 1× run, 1× yoga)
+- Avg sleep: 7h 12m
+- Resting heart rate: 58 bpm`;
+}
+
+// Add more personal data sources here — each returns a formatted string summary
+const personalDataSources: Array<() => Promise<string>> = [
+  fetchGitHubSummary,
+  fetchAppleHealthSummary,
+];
+
 // Searches the Notion workspace for pages related to the decision query,
 // returns their content as markdown snippets for the agent to reason over.
 async function fetchRelevantNotionPages(
@@ -163,13 +178,12 @@ worker.tool("fetchDecisionContext", {
       ? { ...(await fetchIntakeRow(uuid, env)), pageId: uuid }
       : await queryPendingRow(env);
     const searchQuery = `${row.title} ${row.options} ${row.decisionType}`;
-    const [profile, externalData, githubSummary, notionPages] = await Promise.all([
+    const [profile, notionPages, sourceResults] = await Promise.all([
       fetchProfileText(env),
-      fetchExternalData(row.decisionType, row.options),
-      fetchGitHubSummary(),
       fetchRelevantNotionPages(searchQuery, row.pageId, context),
+      Promise.all(personalDataSources.map(fn => fn())),
     ]);
-    const combinedExternal = [externalData, githubSummary, notionPages].filter(Boolean).join("\n\n");
+    const combinedExternal = [...sourceResults, notionPages].filter(Boolean).join("\n\n");
     return { ...row, profile, externalData: combinedExternal };
   },
 });

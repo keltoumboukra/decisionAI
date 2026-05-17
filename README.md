@@ -114,17 +114,17 @@ The deployed Worker registers three capabilities via the `@notionhq/workers` SDK
 
 ---
 
-## External data sources
+## Personal data sources
 
-| Decision type | External API |
-|---------------|-------------|
-| Purchase | NHTSA vehicle safety / complaints data |
-| Tech | Wikipedia search API |
-| Travel | REST Countries API |
-| Career | Remotive remote jobs API |
-| Food | TheMealDB API |
-| All types | GitHub public repos (recent activity) |
-| All types | Notion workspace pages (search by decision keywords, markdown content) |
+The Worker fetches personal context from a `personalDataSources` array — each entry is a function that returns a formatted string. Adding a new source is one line.
+
+| Source | Status | What it provides |
+|--------|--------|-----------------|
+| GitHub API | Live | Your public repos — name, language, stars, description |
+| Apple Health | Mocked | Steps, calories, workouts, sleep, heart rate (last 7 days) |
+| Notion workspace pages | Live | Pages matching the decision keywords, fetched as markdown snippets |
+
+To wire up Apple Health for real, use [Health Auto Export](https://www.healthexportapp.com/) to push a daily JSON summary to a URL, then replace the mock in `fetchAppleHealthSummary()` with a fetch call.
 
 ---
 

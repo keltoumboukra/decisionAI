@@ -14,8 +14,6 @@ import {
   updateIntakeRow,
   recommendationToBlocks,
 } from "./notion.js";
-import { fetchExternalData } from "./external.js";
-
 // Load .env file without any npm dependencies
 try {
   for (const line of readFileSync(".env", "utf8").split("\n")) {
@@ -45,13 +43,24 @@ console.log(`\n[DecideAI] Simulating Custom Agent tool calls for page: ${pageId}
 
 try {
   // --- Simulate fetchDecisionContext ---
-  console.log("1/3  fetchDecisionContext: fetching row + profile + external data...");
-  const [row, profile] = await Promise.all([
+  console.log("1/3  fetchDecisionContext: fetching row + profile + personal data sources...");
+  const [row, profile, githubData] = await Promise.all([
     fetchIntakeRow(pageId, env),
     fetchProfileText(env),
+    fetch("https://api.github.com/users/keltoumboukra/repos?sort=pushed&per_page=8&type=owner", { headers: { "User-Agent": "DecideAI-Test" } })
+      .then(r => r.json())
+      .then(repos => repos.filter((r) => !r.fork).map((r) => `- ${r.name}${r.language ? ` (${r.language})` : ""}${r.stargazers_count > 0 ? ` ★${r.stargazers_count}` : ""}: ${r.description ?? ""}`).join("\n"))
+      .catch(() => ""),
   ]);
-  const externalData = await fetchExternalData(row.decisionType, row.options);
 
+  const appleHealth = `Apple Health (last 7 days):
+- Daily steps avg: 8,432 (goal: 10,000)
+- Active calories avg: 480 kcal/day
+- Workout sessions: 4 (2× strength training, 1× run, 1× yoga)
+- Avg sleep: 7h 12m
+- Resting heart rate: 58 bpm`;
+
+  const externalData = [githubData ? `GitHub repos (recent activity):\n${githubData}` : "", appleHealth].filter(Boolean).join("\n\n");
   const context = { ...row, profile, externalData };
 
   console.log("\n     Context bundle returned to Custom Agent:");
