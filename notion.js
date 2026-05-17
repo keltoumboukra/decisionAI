@@ -80,6 +80,29 @@ export async function fetchIntakeRow(pageId, env) {
   };
 }
 
+export async function createIntakeRow(data, env) {
+  const res = await fetch(`${NOTION_API}/pages`, {
+    method: "POST",
+    headers: headers(env.NOTION_TOKEN),
+    body: JSON.stringify({
+      parent: { database_id: env.INTAKE_DATABASE_ID },
+      properties: {
+        Title: { title: [{ text: { content: data.title } }] },
+        Options: { rich_text: [{ text: { content: data.options } }] },
+        "My Criteria": { rich_text: [{ text: { content: data.criteria } }] },
+        "Decision Type": { select: { name: data.decisionType } },
+        Urgency: { select: { name: data.urgency } },
+        Status: { select: { name: "Pending" } },
+      },
+    }),
+  });
+  const page = await res.json();
+  if (!res.ok) {
+    throw new Error(`createIntakeRow failed (${res.status}): ${page.message ?? JSON.stringify(page)}`);
+  }
+  return page.id;
+}
+
 export async function createRecommendationPage(title, blocks, env, intakePageId) {
   const res = await fetch(`${NOTION_API}/pages`, {
     method: "POST",

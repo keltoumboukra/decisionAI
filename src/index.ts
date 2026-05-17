@@ -1,9 +1,9 @@
-import { Worker } from "@notionhq/workers";
+import { Worker, WebhookVerificationError } from "@notionhq/workers";
 import type { CapabilityContext } from "@notionhq/workers";
 import { j } from "@notionhq/workers/schema-builder";
 import * as Builder from "@notionhq/workers/builder";
 import * as Schema from "@notionhq/workers/schema";
-import { fetchProfileText, fetchIntakeRow, queryPendingRow, createRecommendationPage, updateIntakeRow, recommendationToBlocks, type Env } from "./notion.js";
+import { fetchProfileText, fetchIntakeRow, queryPendingRow, createRecommendationPage, updateIntakeRow, recommendationToBlocks, createIntakeRow, type Env } from "./notion.js";
 
 const worker = new Worker();
 export default worker;
@@ -206,5 +206,32 @@ worker.tool("writeRecommendation", {
     const { url } = await createRecommendationPage(title, blocks, env, uuid);
     await updateIntakeRow(uuid, url, env);
     return { url };
+  },
+});
+
+worker.webhook("submitDecision", {
+  title: "Submit Decision",
+  description: "Accepts a decision from any external source (iOS Shortcut, web form, CLI) and creates a new intake row with Status=Pending to trigger DecideAI automatically.",
+  execute: async (events) => {
+    const env = makeEnv();
+    const secret = process.env.WEBHOOK_SECRET;
+    for (const event of events) {
+      if (secret && event.headers["x-decidai-secret"] !== secret) {
+        throw new WebhookVerificationError("Invalid secret");
+      }
+      const { title, options, criteria, decisionType, urgency } = event.body as any;
+      if (!title || !options || !decisionType) {
+        console.warn("[webhook] Skipping: missing required fields (title, options, decisionType)");
+        continue;
+      }
+      const pageId = await createIntakeRow({
+        title,
+        options,
+        criteria: criteria ?? "",
+        decisionType,
+        urgency: urgency ?? "No rush",
+      }, env);
+      console.log(`[webhook] Created intake row "${title}" → ${pageId}`);
+    }
   },
 });

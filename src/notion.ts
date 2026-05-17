@@ -86,6 +86,32 @@ export async function fetchIntakeRow(pageId: string, env: Env) {
   };
 }
 
+export async function createIntakeRow(
+  data: { title: string; options: string; criteria: string; decisionType: string; urgency: string },
+  env: Env
+): Promise<string> {
+  const res = await fetch(`${NOTION_API}/pages`, {
+    method: "POST",
+    headers: headers(env.NOTION_TOKEN),
+    body: JSON.stringify({
+      parent: { database_id: env.INTAKE_DATABASE_ID },
+      properties: {
+        Title: { title: [{ text: { content: data.title } }] },
+        Options: { rich_text: [{ text: { content: data.options } }] },
+        "My Criteria": { rich_text: [{ text: { content: data.criteria } }] },
+        "Decision Type": { select: { name: data.decisionType } },
+        Urgency: { select: { name: data.urgency } },
+        Status: { select: { name: "Pending" } },
+      },
+    }),
+  });
+  const page: any = await res.json();
+  if (!res.ok) {
+    throw new Error(`createIntakeRow failed (${res.status}): ${page.message ?? JSON.stringify(page)}`);
+  }
+  return page.id;
+}
+
 export async function createRecommendationPage(
   title: string,
   blocks: any[],
