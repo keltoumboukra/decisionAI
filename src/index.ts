@@ -1,4 +1,5 @@
 import { Worker } from "@notionhq/workers";
+import type { CapabilityContext } from "@notionhq/workers";
 import { j } from "@notionhq/workers/schema-builder";
 import * as Builder from "@notionhq/workers/builder";
 import * as Schema from "@notionhq/workers/schema";
@@ -95,9 +96,52 @@ async function fetchGitHubSummary(): Promise<string> {
   }
 }
 
+// Searches the Notion workspace for pages related to the decision query,
+// returns their content as markdown snippets for the agent to reason over.
+async function fetchRelevantNotionPages(
+  query: string,
+  skipPageId: string,
+  context: CapabilityContext
+): Promise<string> {
+  try {
+    const searchRes = await context.notion.search({
+      query,
+      filter: { property: "object", value: "page" },
+      sort: { timestamp: "last_edited_time", direction: "descending" },
+      page_size: 5,
+    });
+
+    const skipNorm = skipPageId.replace(/-/g, "");
+    const pages = searchRes.results
+      .filter((p: any) => p.id?.replace(/-/g, "") !== skipNorm)
+      .slice(0, 4);
+
+    if (pages.length === 0) return "";
+
+    const snippets = await Promise.all(
+      pages.map(async (page: any) => {
+        try {
+          const md = await context.notion.pages.retrieveMarkdown({ page_id: page.id });
+          const titleProp = page.properties?.title ?? page.properties?.Name;
+          const title = titleProp?.title?.map((t: any) => t.plain_text).join("") ?? page.id;
+          const content = md.markdown.slice(0, 500);
+          return `### ${title}\n${content}${md.markdown.length > 500 ? "..." : ""}`;
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const valid = snippets.filter(Boolean) as string[];
+    return valid.length > 0 ? `Relevant Notion pages:\n\n${valid.join("\n\n")}` : "";
+  } catch {
+    return "";
+  }
+}
+
 worker.tool("fetchDecisionContext", {
   title: "Fetch Decision Context",
-  description: "Returns all data needed to reason about a decision: the intake row fields (title, options, criteria, decision type, urgency), the user profile text, and external data relevant to the decision type.",
+  description: "Returns all data needed to reason about a decision: the intake row fields (title, options, criteria, decision type, urgency), the user profile text, external API data, GitHub activity, and content from relevant Notion pages in the workspace.",
   schema: j.object({
     pageId: j.string().describe("Notion page ID of the decision intake row"),
   }),
@@ -112,18 +156,20 @@ worker.tool("fetchDecisionContext", {
     externalData: j.string(),
   }),
   hints: { readOnlyHint: true },
-  execute: async ({ pageId }) => {
+  execute: async ({ pageId }, context) => {
     const env = makeEnv();
     const uuid = extractUUID(pageId);
     const row = uuid
       ? { ...(await fetchIntakeRow(uuid, env)), pageId: uuid }
       : await queryPendingRow(env);
-    const [profile, externalData, githubSummary] = await Promise.all([
+    const searchQuery = `${row.title} ${row.options} ${row.decisionType}`;
+    const [profile, externalData, githubSummary, notionPages] = await Promise.all([
       fetchProfileText(env),
       fetchExternalData(row.decisionType, row.options),
       fetchGitHubSummary(),
+      fetchRelevantNotionPages(searchQuery, row.pageId, context),
     ]);
-    const combinedExternal = [externalData, githubSummary].filter(Boolean).join("\n\n");
+    const combinedExternal = [externalData, githubSummary, notionPages].filter(Boolean).join("\n\n");
     return { ...row, profile, externalData: combinedExternal };
   },
 });
